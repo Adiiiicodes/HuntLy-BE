@@ -1,6 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const chatRouter = require('./routes/chat');
+const { router: enhanceRouter } = require('./utils/response-enhancer');
 
 const app = express();
 
@@ -10,6 +11,7 @@ app.use(express.json());
 
 // Routes
 app.use('/api/chat', chatRouter);  // Fixed route path
+app.use('/api/enhance', enhanceRouter);  // New enhance response route
 
 // Health check
 app.get('/health', (req, res) => {
