@@ -12,7 +12,7 @@ const groq = new Groq({
  * @param {string} initialResponse - The response from the first Groq API call
  * @returns {Promise<string>} - The enhanced response
  */
-const enhanceResponse = async (initialResponse) => {
+const enhanceResponse = async (initialResponse, query) => {
     try {
         console.log("Enhancing response...");
 
@@ -20,17 +20,77 @@ const enhanceResponse = async (initialResponse) => {
             messages: [
                 {
                     role: "system",
-                    content: "You are an expert response enhancer. Your task is to improve the given response by:\n" +
-                            "1. Making it more concise and clear\n" +
-                            "2. Ensuring it maintains the HTML format\n" +
-                            "3. Adding relevant examples or analogies where helpful\n" +
-                            "4. Improving the structure and flow\n" +
-                            "5. Keeping the same information but presenting it better\n" +
-                            "Return the enhanced response in valid HTML format."
+                    content: `# Data Cleaning and Candidate Ranking System
+        
+        You are a specialized data processing agent that takes raw candidate profile data, cleans it, and ranks candidates based on their relevance to a specific query. Your purpose is to objectively evaluate and sort candidates without adding unnecessary commentary.
+        
+        ## Core Function
+        
+        Your task is to:
+        1. Parse the raw candidate data provided
+        2. Clean and normalize the information
+        3. Extract key ranking criteria from the user's query
+        4. Score each candidate based on relevance to these criteria
+        5. Present a ranked list from most to least relevant
+        
+        ## Output Format Requirements
+        
+        **IMPORTANT: Return your answer strictly in valid HTML**. Use these HTML elements:
+        - Use <div class="ranked-candidates"> as the container
+        - Use <ol> for the ordered ranking list
+        - Use <li class="candidate"> for each candidate entry
+        - Use <span class="rank-score"> to show the relevance score
+        - Include only factual, relevant information
+        - DO NOT add commentary, analysis, or explanations
+        - DO NOT use a conversational tone or ask questions
+        - AVOID unnecessary text - focus on the ranked data
+        
+        Example structure:
+        
+        <div class="ranked-candidates">
+          <ol>
+            <li class="candidate">
+              <h3>John Smith <span class="rank-score">92%</span></h3>
+              <p><strong>Experience:</strong> 5 years in web development</p>
+              <p><strong>Skills:</strong> JavaScript, React, Node.js, TypeScript, AWS</p>
+              <p><strong>Relevance:</strong> Directly matches all key requirements</p>
+            </li>
+            
+            <li class="candidate">
+              <h3>Jane Doe <span class="rank-score">84%</span></h3>
+              <p><strong>Experience:</strong> 4 years in software engineering</p>
+              <p><strong>Skills:</strong> JavaScript, React, Express, MongoDB</p>
+              <p><strong>Relevance:</strong> Matches most requirements but lacks Node.js experience</p>
+            </li>
+            
+            <!-- Continue with all candidates in ranked order -->
+          </ol>
+        </div>
+        
+        ## Ranking Methodology
+        
+        Score candidates based on:
+        1. Exact keyword matches to the query (highest weight)
+        2. Semantic relevance to the query requirements
+        3. Years of relevant experience
+        4. Depth and quality of skills
+        5. Relevance of past projects/roles
+        
+        Calculate a percentage score (0-100%) representing overall match quality.
+        
+        ## Data Cleaning Rules
+        
+        1. Normalize job titles (e.g., "Sr. Developer" = "Senior Developer")
+        2. Standardize skill names (e.g., "JS" = "JavaScript")
+        3. Extract numeric values for experience (convert "five years" to "5 years")
+        4. Remove irrelevant or redundant information
+        5. Format all data consistently across candidates
+        
+        Present only the cleaned, ranked results without any introduction or explanation. The output should be a pure data presentation showing candidates from highest to lowest relevance score based on the query criteria.`
                 },
                 {
                     role: "user",
-                    content: `Please enhance this response while maintaining its HTML structure and core information:\n\n${initialResponse}`
+                    content: `Please rank the following candidate profiles\n\n${initialResponse}  based on the user query: ${query}` , 
                 }
             ],
             model: "llama-3.3-70b-versatile",
@@ -57,23 +117,19 @@ const enhanceResponse = async (initialResponse) => {
  */
 router.get('/', async (req, res) => {
     try {
-        const { response } = req.query;
+        const { response, query } = req.query;
 
-        if (!response) {
+        if (!response || !query) {
             return res.status(400).json({
                 success: false,
-                error: 'Response parameter is required'
+                error: 'Response and query parameters are required'
             });
         }
 
-        const enhancedResponse = await enhanceResponse(response);
+        const enhancedResponse = await enhanceResponse(response, query);
 
         res.json({
-            success: true,
-            data: {
-
-                enhancedResponse: enhancedResponse
-            }
+            enhancedResponse
         });
 
     } catch (error) {

@@ -10,8 +10,8 @@ app.use(cors());
 app.use(express.json());
 
 // Routes
-app.use('/api/chat', chatRouter);  // Fixed route path
-app.use('/api/enhance', enhanceRouter);  // New enhance response route
+app.use('/api/phase1', chatRouter);  // Fixed route path
+app.use('/api/ranker', enhanceRouter);  // New enhance response route
 
 // Health check
 app.get('/health', (req, res) => {
