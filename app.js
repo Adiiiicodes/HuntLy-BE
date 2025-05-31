@@ -2,6 +2,7 @@ const express = require('express');
 const cors = require('cors');
 const chatRouter = require('./routes/chat');
 const { router: enhanceRouter } = require('./utils/response-enhancer');
+const registerCandidateRouter = require('./routes/register-candidate');
 
 const app = express();
 
@@ -12,6 +13,7 @@ app.use(express.json());
 // Routes
 app.use('/api/phase1', chatRouter);  // Fixed route path
 app.use('/api/ranker', enhanceRouter);  // New enhance response route
+app.use('/api/register', registerCandidateRouter);
 
 // Health check
 app.get('/health', (req, res) => {
