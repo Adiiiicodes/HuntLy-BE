@@ -3,6 +3,7 @@ const cors = require('cors');
 const chatRouter = require('./routes/chat');
 const { router: enhanceRouter } = require('./utils/response-enhancer');
 const registerCandidateRouter = require('./routes/register-candidate');
+const candidateSearchRouter = require('./routes/candidate-search');
 
 const app = express();
 
@@ -15,6 +16,7 @@ app.use('/api/chat', require('./routes/chat'));
 app.use('/api/chat', chatRouter);  // Fixed route path
 app.use('/api/ranker', enhanceRouter);  // New enhance response route
 app.use('/api/register', registerCandidateRouter);
+app.use('/api/candidates', candidateSearchRouter);  // New candidate search route
 
 // Health check
 app.get('/health', (req, res) => {
