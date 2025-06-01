@@ -9,9 +9,10 @@ const app = express();
 // Middleware
 app.use(cors());
 app.use(express.json());
+app.use('/api/chat', require('./routes/chat'));
 
 // Routes
-app.use('/api/phase1', chatRouter);  // Fixed route path
+app.use('/api/chat', chatRouter);  // Fixed route path
 app.use('/api/ranker', enhanceRouter);  // New enhance response route
 app.use('/api/register', registerCandidateRouter);
 
