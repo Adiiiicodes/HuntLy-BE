@@ -1,7 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const chatRouter = require('./routes/chat');
-const { router: enhanceRouter } = require('./utils/response-enhancer');
+const rankerRouter = require('./routes/ranker');  // Use the dedicated router
 const registerCandidateRouter = require('./routes/register-candidate');
 const candidateSearchRouter = require('./routes/candidate-search');
 
@@ -10,13 +10,12 @@ const app = express();
 // Middleware
 app.use(cors());
 app.use(express.json());
-app.use('/api/chat', require('./routes/chat'));
 
-// Routes
-app.use('/api/chat', chatRouter);  // Fixed route path
-app.use('/api/ranker', enhanceRouter);  // New enhance response route
+// Routes - remove duplicate
+app.use('/api/chat', chatRouter);  // Only include once
+app.use('/api/ranker', rankerRouter);  // Use the dedicated router
 app.use('/api/register', registerCandidateRouter);
-app.use('/api/candidates', candidateSearchRouter);  // New candidate search route
+app.use('/api/candidates', candidateSearchRouter);
 
 // Health check
 app.get('/health', (req, res) => {
