@@ -164,7 +164,7 @@ const generateResponse = async (context, query) => {
                     content: `Context: ${context}\n\nQuestion: ${query}`
                 }
             ],
-            model: "llama-3.3-70b-versatile",
+            model: "llama-3.1-8b-instant",
             temperature: 0.5,
             max_tokens: 1024
         });

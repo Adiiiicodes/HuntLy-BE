@@ -67,7 +67,7 @@ You MUST respond with ONLY a valid JSON object in this EXACT format:
                     content: `Extract structured information from these candidate profiles:\n\n${initialResponse}\n\nUser query for reference: ${query}`
                 }
             ],
-            model: "llama-3.3-70b-versatile",
+            model: "llama-3.1-8b-instant",
             temperature: 0.2,
             max_tokens: 1024,
             response_format: { type: "json_object" }

@@ -53,10 +53,9 @@ const formatCandidates = async (response, query) => {
                     content: `HTML Response: ${response}\n\nOriginal Query: ${query}\n\nIMPORTANT: Return ONLY the JSON array, no other text or explanation.`
                 }
             ],
-            model: "llama-3.3-70b-versatile",
+            model: "llama-3.1-8b-instant",
             temperature: 0.1, // Lower temperature for more consistent JSON output
-            max_tokens: 1024,
-            response_format: { type: "json_object" } // Force JSON response
+            max_tokens: 1024
         });
 
         const formattedResponse = completion.choices[0]?.message?.content;
@@ -65,6 +64,19 @@ const formatCandidates = async (response, query) => {
         try {
             // Clean the response in case there's any extra text
             const cleanResponse = formattedResponse.trim();
+            
+            // Handle concatenated JSON objects
+            if (cleanResponse.includes('}\n{')) {
+                // Split the response into individual JSON objects
+                const jsonObjects = cleanResponse.split('}\n{').map((obj, index) => {
+                    // Add back the curly braces that were removed by split
+                    const jsonStr = index === 0 ? obj + '}' : '{' + obj;
+                    return JSON.parse(jsonStr);
+                });
+                return jsonObjects;
+            }
+            
+            // Try parsing as a regular JSON response
             const parsedResponse = JSON.parse(cleanResponse);
             
             // Handle both direct array and object with candidates array
