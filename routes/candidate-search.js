@@ -7,25 +7,31 @@ router.get('/', (req, res) => {
     res.json({
         message: 'Candidate search API is working',
         endpoints: {
-            search: '/api/candidates/search?query=YOUR_QUERY&response=YOUR_RESPONSE'
+            search: '/api/candidates/search - POST request with query and initialResponse in body'
         }
     });
 });
 
-// Search endpoint
-router.get('/search', async (req, res) => {
+// Search endpoint - POST only
+router.post('/search', async (req, res) => {
     try {
-        const { query, response } = req.query;
+        const { query, initialResponse } = req.body;
 
-        if (!query || !response) {
+        if (!query || !initialResponse) {
             return res.status(400).json({
                 success: false,
-                message: 'Both query and response parameters are required'
+                message: 'Both query and initialResponse are required in the request body'
             });
         }
 
+        console.log('Received search request:');
+        console.log('- Query:', query);
+        console.log('- Initial response length:', initialResponse.length);
+
         // Format the existing response into structured JSON
-        const formattedCandidates = await formatCandidates(response, query);
+        const formattedCandidates = await formatCandidates(initialResponse, query);
+
+        console.log(`Returning ${formattedCandidates.length} formatted candidates`);
 
         return res.status(200).json({
             success: true,
@@ -42,4 +48,20 @@ router.get('/search', async (req, res) => {
     }
 });
 
-module.exports = router; 
+// Redirect GET requests to the documentation
+router.get('/search', (req, res) => {
+    res.status(405).json({
+        success: false,
+        message: 'Method Not Allowed. Please use POST for search requests',
+        correctUsage: {
+            method: 'POST',
+            endpoint: '/api/candidates/search',
+            body: {
+                query: 'Your search query',
+                initialResponse: 'JSON response from initial search'
+            }
+        }
+    });
+});
+
+module.exports = router;
