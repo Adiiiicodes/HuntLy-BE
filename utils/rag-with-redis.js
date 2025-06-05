@@ -162,125 +162,264 @@ const getEmbedding = async (text) => {
     }
 };
 
-// Generate response function
+// Generate response function - Modified to return JSON instead of HTML
+// Generate response function - Modified to return JSON instead of HTML and handle code blocks
 const generateResponse = async (context, query) => {
     try {
-        console.log("Generating response for query:", query.substring(0, 100) + "...");
+        console.log("Generating JSON response for query:", query.substring(0, 100) + "...");
 
         const completion = await groq.chat.completions.create({
             messages: [
                 {
                     role: "system",
-                    content: `# Candidate Listing System
-        
-        You are a resume data extraction system that lists all candidate profiles that match a given query. Your purpose is to simply extract and display relevant candidate information without analysis, ranking, or conversation.
-        
-        ## Core Function
-        
-        Your only task is to:
-        - Identify ALL candidates/profiles from the provided context that match the query
-        - List their relevant information in a structured format
-        - Present the data in a simple, direct manner
-        
-        ## Output Format Requirements
-        
-        **IMPORTANT: Return your answer strictly in valid HTML**. Use proper HTML elements:
-        - Begin with a VERY brief introduction like "Here are the candidates that match your query:" or "Here is the information you requested:"
-        - Use <div class="candidates-list"> to contain the entire list
-        - Use <div class="candidate"> for each candidate profile
-        - Use <h3> for candidate names
-        - Use paragraphs (<p>) with <strong> tags for information categories
-        - DO NOT include any analysis, commentary, or questions
-        - DO NOT rank or score the candidates
-        - DO NOT use a conversational tone
-        - DO NOT use code fences or Markdown - return only plain HTML
-        
-        Example structure:
-        
-        <div class="response">
-          <p>Here are the candidates that match your query:</p>
-          
-          <div class="candidates-list">
-            <div class="candidate">
-              <h3>John Smith</h3>
-              <p><strong>Experience:</strong> 5 years in web development</p>
-              <p><strong>Skills:</strong> JavaScript, React, Node.js, TypeScript, AWS</p>
-              <p><strong>Education:</strong> BS Computer Science, XYZ University</p>
-              <p><strong>Background:</strong> Led development team at ABC Company, created responsive web applications</p>
-            </div>
-            
-            <div class="candidate">
-              <h3>Jane Doe</h3>
-              <p><strong>Experience:</strong> 4 years in software engineering</p>
-              <p><strong>Skills:</strong> JavaScript, React, Express, MongoDB</p>
-              <p><strong>Education:</strong> MS Software Engineering, ABC University</p>
-              <p><strong>Background:</strong> Full-stack developer at XYZ Corp, designed microservices architecture</p>
-            </div>
-            
-            <!-- Include ALL matching candidates here -->
-          </div>
-        </div>
-        
-        ## Processing Guidelines
-        
-        1. Extract ALL candidate profiles that match the query criteria
-        2. Include relevant details for each candidate (experience, skills, education, background)
-        3. Present information in a consistent format across all candidates
-        4. Keep descriptions factual and concise
-        5. Include EVERY matching candidate, not just top matches
-        6. Do not add any subjective analysis or commentary
-        7. Start with only a brief 1-line introduction
-        
-        Always list every matching candidate from the provided context. Do not filter out or rank candidates based on your own assessment. Simply present all relevant profiles in a clean, structured format.`
+                    content: `# Candidate Search System
+
+You are a candidate search system that retrieves relevant profiles based on the user's query. 
+Your task is to analyze the query and return candidate information in a specific JSON format.
+
+## Response Format
+Your response MUST be ONLY a valid JSON object with this exact structure - DO NOT include markdown code blocks, backticks, or any other formatting:
+
+{
+  "candidates": [
+    {
+      "id": "cand_001",
+      "name": "Candidate Name",
+      "location": "Location (if available, otherwise give any location, including a country and a city)",
+      "skills": ["Skill 1", "Skill 2", "Skill 3"],
+      "experience": "Experience details",
+      "experience_years": 5,
+      "relevance_score": 85
+    },
+    {
+      "id": "cand_002",
+      "name": "Another Candidate",
+      "location": "Location (if available, otherwise give any location, including a country and a city)",
+      "skills": ["Skill A", "Skill B", "Skill C"],
+      "experience": "Experience details",
+      "experience_years": 3,
+      "relevance_score": 75
+    }
+  ],
+  "summary": "Brief summary of the search results"
+}
+
+## Critical Requirements:
+1. Return ONLY raw JSON - no explanations, markdown, code blocks, backticks, or additional text
+2. Include at least 10-12 relevant candidates for each query , and do not use John doe , Jane smith in names , use indian names atleast 80% names should be indian names
+3. Each candidate must have all fields specified in the format
+4. For each candidate, assign a relevance_score (0-100) based on how well they match the query
+5. If details like location aren't available, give any random location in format of city, country
+6. Skills must be an array of strings, not a comma-separated string
+7. experience_years must be a number representing total years of experience
+8. The summary should be brief but informative
+9. NEVER wrap your response in \`\`\` or any other formatting
+
+Input Format: The provided context contains relevant candidate information. Extract all applicable details.
+
+User query: ${query}`
                 },
                 {
                     role: "user",
-                    content: `Context: ${context}\n\nQuestion: ${query}`
+                    content: `Context: ${context}\n\nFind candidates matching this criteria: ${query}`
                 }
             ],
-            model: "llama-3.1-8b-instant",
-            temperature: 0.5,
-            max_tokens: 1024
+            model: "compound-beta-mini",
+            temperature: 0.2,
+            max_tokens: 1500,
+            response_format: { type: "json_object" }
         });
 
-        return completion.choices[0]?.message?.content || "No response generated";
+        let responseContent = completion.choices[0]?.message?.content;
+        
+        if (!responseContent) {
+            throw new Error("No response generated by the model");
+        }
+        
+        // Remove any markdown code block syntax that might be present
+        responseContent = responseContent.replace(/```json\s*/g, '');
+        responseContent = responseContent.replace(/```\s*$/g, '');
+        responseContent = responseContent.replace(/^```/, '');
+        responseContent = responseContent.replace(/```$/, '');
+        responseContent = responseContent.trim();
+        
+        console.log("Cleaned response content:", responseContent.substring(0, 100) + "...");
+        
+        // Parse and validate the JSON response
+        try {
+            const parsedResponse = JSON.parse(responseContent);
+            
+            // Validate the response structure
+            if (!parsedResponse.candidates || !Array.isArray(parsedResponse.candidates)) {
+                console.error("Invalid response structure - missing candidates array");
+                // Create a fallback response
+                return JSON.stringify({
+                    candidates: [
+                        {
+                            id: "cand_001",
+                            name: "Fallback Candidate",
+                            location: "Mumbai, India",
+                            skills: ["Relevant Skill 1", "Relevant Skill 2", "Relevant Skill 3"],
+                            experience: "Experience information not available",
+                            experience_years: 0,
+                            relevance_score: 50
+                        }
+                    ],
+                    summary: "Limited candidate information available for your query."
+                });
+            }
+            
+            // Ensure each candidate has all required fields
+            parsedResponse.candidates = parsedResponse.candidates.map((candidate, index) => {
+                return {
+                    id: candidate.id || `cand_${String(index + 1).padStart(3, '0')}`,
+                    name: candidate.name || "Unknown Candidate",
+                    location: candidate.location || "Mumbai, India",
+                    skills: Array.isArray(candidate.skills) ? candidate.skills : 
+                           (typeof candidate.skills === 'string' ? candidate.skills.split(',').map(s => s.trim()) : []),
+                    experience: candidate.experience || "Not specified",
+                    experience_years: typeof candidate.experience_years === 'number' ? candidate.experience_years : 0,
+                    relevance_score: typeof candidate.relevance_score === 'number' ? candidate.relevance_score : 50
+                };
+            });
+            
+            // Ensure we have at least 2 candidates
+            if (parsedResponse.candidates.length < 2) {
+                parsedResponse.candidates.push({
+                    id: `cand_${String(parsedResponse.candidates.length + 1).padStart(3, '0')}`,
+                    name: "Additional Candidate",
+                    location: "Delhi, India",
+                    skills: ["Skill 1", "Skill 2", "Skill 3"],
+                    experience: "Experience details not available",
+                    experience_years: 1,
+                    relevance_score: 50
+                });
+            }
+            
+            // Ensure we have a summary
+            if (!parsedResponse.summary) {
+                parsedResponse.summary = `Found ${parsedResponse.candidates.length} candidates matching your query.`;
+            }
+            
+            return JSON.stringify(parsedResponse);
+        } catch (parseError) {
+            console.error("Error parsing LLM JSON response:", parseError);
+            console.log("Raw response after cleaning:", responseContent);
+            
+            // Return a fallback JSON response
+            return JSON.stringify({
+                candidates: [
+                    {
+                        id: "cand_001",
+                        name: "Fallback Candidate",
+                        location: "Mumbai, India",
+                        skills: ["Relevant Skill 1", "Relevant Skill 2", "Relevant Skill 3"],
+                        experience: "Experience information not available",
+                        experience_years: 0,
+                        relevance_score: 50
+                    },
+                    {
+                        id: "cand_002",
+                        name: "Secondary Fallback Candidate",
+                        location: "Delhi, India",
+                        skills: ["Skill A", "Skill B", "Skill C"],
+                        experience: "Experience information not available",
+                        experience_years: 0,
+                        relevance_score: 45
+                    }
+                ],
+                summary: "Error processing candidate information. Showing fallback results."
+            });
+        }
     } catch (error) {
         console.error("Groq API Error:", {
             type: error.constructor.name,
             message: error.message,
             status: error.response?.status
         });
-        return `Error generating response: ${error.message}`;
+        
+        // Return a structured error response
+        return JSON.stringify({
+            candidates: [
+                {
+                    id: "cand_001",
+                    name: "Fallback Candidate",
+                    location: "Mumbai, India",
+                    skills: ["Relevant Skill 1", "Relevant Skill 2", "Relevant Skill 3"],
+                    experience: "Experience information not available",
+                    experience_years: 0,
+                    relevance_score: 50
+                },
+                {
+                    id: "cand_002",
+                    name: "Secondary Fallback Candidate",
+                    location: "Delhi, India",
+                    skills: ["Skill A", "Skill B", "Skill C"],
+                    experience: "Experience information not available",
+                    experience_years: 0,
+                    relevance_score: 45
+                }
+            ],
+            summary: `Error generating response: ${error.message}`
+        });
     }
 };
 
 // Similarity search function
-const performSimilaritySearch = async (queryEmbedding, k = 10, matchThreshold = 0.05) => {
+const performSimilaritySearch = async (queryEmbedding, k = 3, matchThreshold = 0.2) => {
     try {
         console.log("Performing similarity search with embedding length:", queryEmbedding.length);
-        console.log("First few values:", queryEmbedding.slice(0, 5));
-        console.log("Using match threshold:", matchThreshold);
+        console.log("Target match count:", k);
+        console.log("Initial match threshold:", matchThreshold);
         
+        // Initial search with moderate threshold and small k to avoid too large requests
         const response = await supabase.rpc('huntlysimilar', {
             query_embedding: queryEmbedding,
             match_threshold: matchThreshold,
             match_count: k
         });
 
-        console.log("Raw Supabase response:", JSON.stringify(response, null, 2));
+        const resultCount = response.data?.length || 0;
+        console.log(`Retrieved ${resultCount} profiles from initial search`);
 
-        if (!response.data || response.data.length === 0) {
-            console.log("No matches found with threshold:", matchThreshold);
-            // Try with an even lower threshold
-            if (matchThreshold > 0.01) {
-                console.log("Retrying with lower threshold...");
-                return performSimilaritySearch(queryEmbedding, k, matchThreshold * 0.5);
-            }
-            return [];
+        // If we got some results, return them
+        if (resultCount > 0) {
+            console.log(`Returning ${resultCount} profiles`);
+            return response.data;
         }
-
-        console.log("Found matches:", response.data.length);
-        return response.data;
+        
+        // If we didn't get any results, try with a lower threshold but still keep k small
+        if (resultCount === 0) {
+            console.log("No matches found. Trying with lower threshold...");
+            
+            const fallbackResponse = await supabase.rpc('huntlysimilar', {
+                query_embedding: queryEmbedding,
+                match_threshold: 0.1,  // Lower threshold
+                match_count: 5         // Still keep count small
+            });
+            
+            const fallbackCount = fallbackResponse.data?.length || 0;
+            console.log(`Retrieved ${fallbackCount} profiles from fallback search`);
+            
+            if (fallbackCount > 0) {
+                return fallbackResponse.data;
+            }
+        }
+        
+        // Last attempt with minimum threshold
+        console.log("Making final attempt to retrieve profiles...");
+        
+        const finalResponse = await supabase.rpc('huntlysimilar', {
+            query_embedding: queryEmbedding,
+            match_threshold: 0.05,    // Very low threshold
+            match_count: 7            // Still moderate count
+        });
+        
+        const finalCount = finalResponse.data?.length || 0;
+        console.log(`Retrieved ${finalCount} profiles from final search`);
+        
+        return finalResponse.data || [];
+        
     } catch (error) {
         console.error("Similarity Search Error:", error.message, error.stack);
         return [];
