@@ -365,8 +365,75 @@ User query: ${query}`
     }
 };
 
+
+
+// Add this function to rag-with-redis.js
+const performHybridSearch = async (query, queryEmbedding, k = 5) => {
+    try {
+        console.log("Performing hybrid search for:", query);
+        
+        // Extract potential names from the query using a simple regex
+        const potentialNames = query.match(/[A-Z][a-z]+ (?:[A-Z][a-z]+ )*[A-Z][a-z]+/g) || [];
+        
+        let results = [];
+        
+        // If we detected potential names, do a text search first
+        if (potentialNames.length > 0) {
+            console.log("Detected potential names:", potentialNames);
+            
+            // Text search for each potential name
+            for (const name of potentialNames) {
+                const { data: textResults, error } = await supabase
+                    .from('huntlyembeddings')
+                    .select('id, content')
+                    .ilike('content', `%${name}%`)
+                    .limit(5);
+                
+                if (textResults && textResults.length > 0) {
+                    console.log(`Found ${textResults.length} results via text search for "${name}"`);
+                    results.push(...textResults);
+                }
+            }
+        }
+        
+        // Also do a vector similarity search with a low threshold
+        const vectorResults = await performSimilaritySearch(queryEmbedding, k, 0.1);
+        
+        // Combine results, removing duplicates by ID
+        if (vectorResults.length > 0) {
+            const existingIds = new Set(results.map(r => r.id));
+            for (const vectorResult of vectorResults) {
+                if (!existingIds.has(vectorResult.id)) {
+                    results.push(vectorResult);
+                    existingIds.add(vectorResult.id);
+                }
+            }
+        }
+        
+        // Sort results by potential relevance
+        // If a result contains any of the potential names, it gets higher priority
+        results.sort((a, b) => {
+            const aContainsName = potentialNames.some(name => a.content.includes(name));
+            const bContainsName = potentialNames.some(name => b.content.includes(name));
+            
+            if (aContainsName && !bContainsName) return -1;
+            if (!aContainsName && bContainsName) return 1;
+            return 0;
+        });
+        
+        console.log(`Hybrid search returned ${results.length} results`);
+        return results.slice(0, k); // Limit to k results
+    } catch (error) {
+        console.error("Hybrid Search Error:", error.message);
+        return [];
+    }
+};
+
+
+
+
 // Similarity search function
-const performSimilaritySearch = async (queryEmbedding, k = 3, matchThreshold = 0.2) => {
+const performSimilaritySearch = async (queryEmbedding, k = 5, matchThreshold = 1) => {
     try {
         console.log("Performing similarity search with embedding length:", queryEmbedding.length);
         console.log("Target match count:", k);
@@ -487,7 +554,7 @@ const processChat = async (userQuery) => {
         }
 
         // Perform similarity search
-        const similarDocs = await performSimilaritySearch(queryEmbedding, 2);
+        const similarDocs = await performHybridSearch(userQuery, queryEmbedding, 5);
         console.log("Similar documents found:", similarDocs);
         
         const context = similarDocs.length > 0 

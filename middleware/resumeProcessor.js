@@ -5,6 +5,7 @@ const fs = require('fs');
 const pdf = require('pdf-parse');
 const { pipeline } = require('@huggingface/transformers');
 const { createClient } = require('@supabase/supabase-js');
+const mongoose = require('mongoose');
 
 // Initialize Supabase client
 const supabase = createClient(
@@ -20,7 +21,6 @@ const storage = multer.diskStorage({
     cb(null, uploadPath);
   },
   filename: (req, file, cb) => {
-    // Generate a unique filename with timestamp
     const uniqueSuffix = Date.now() + '-' + Math.round(Math.random() * 1E9);
     cb(null, uniqueSuffix + '-' + file.originalname);
   }
@@ -42,27 +42,6 @@ const upload = multer({
   limits: { fileSize: 10 * 1024 * 1024 } // 10MB max file size
 });
 
-// Text splitter function to divide text into chunks
-function splitText(text, chunkSize = 1000, chunkOverlap = 200) {
-  const chunks = [];
-  let i = 0;
-  
-  while (i < text.length) {
-    // Calculate end position with overlap
-    const end = Math.min(i + chunkSize, text.length);
-    chunks.push(text.slice(i, end));
-    
-    // Move to next chunk with overlap
-    i += chunkSize - chunkOverlap;
-    if (i >= text.length) break;
-    
-    // Make sure we don't go backwards if overlap > current position
-    i = Math.max(0, i);
-  }
-  
-  return chunks;
-}
-
 // Function to extract text from PDF
 async function extractTextFromPDF(filePath) {
   try {
@@ -75,8 +54,8 @@ async function extractTextFromPDF(filePath) {
   }
 }
 
-// Function to generate embeddings for text chunks
-async function generateEmbeddings(textChunks) {
+// Function to generate embeddings
+async function generateEmbedding(text) {
   console.log("[LOG] Initializing HuggingFace pipeline...");
   
   // Create a feature-extraction pipeline
@@ -88,65 +67,62 @@ async function generateEmbeddings(textChunks) {
   
   console.log("[LOG] HuggingFace pipeline initialized.");
   
-  // Generate embeddings for all chunks
-  const embeddings = await extractor(textChunks, { 
+  // Generate embedding for the text
+  const embeddings = await extractor([text], { 
     pooling: "mean", 
     normalize: true 
   });
   
-  // Process embeddings to ensure they're in the correct format
-  return embeddings.map(embedding => {
-    let embeddingArray = embedding;
-    
-    // If the embedding is an object with ort_tensor.cpuData, extract and convert to array
-    if (
-      embeddingArray && 
-      embeddingArray.ort_tensor && 
-      embeddingArray.ort_tensor.cpuData && 
-      typeof embeddingArray.ort_tensor.cpuData === "object"
-    ) {
-      embeddingArray = Object.values(embeddingArray.ort_tensor.cpuData);
-    }
-    
-    // If it's a nested array, flatten it
-    if (Array.isArray(embeddingArray) && Array.isArray(embeddingArray[0])) {
-      embeddingArray = embeddingArray[0];
-    }
-    
-    return embeddingArray;
-  });
+  // Process embedding to ensure it's in the correct format
+  let embeddingArray = embeddings[0];
+  
+  // Extract values from tensor if needed
+  if (embeddingArray && embeddingArray.ort_tensor && embeddingArray.ort_tensor.cpuData) {
+    embeddingArray = Object.values(embeddingArray.ort_tensor.cpuData);
+  }
+  
+  // Flatten nested array if needed
+  if (Array.isArray(embeddingArray) && Array.isArray(embeddingArray[0])) {
+    embeddingArray = embeddingArray[0];
+  }
+  
+  return embeddingArray;
 }
 
-// Function to store embeddings in Supabase
-// Function to store embeddings in Supabase
-async function storeEmbeddings(textChunks, embeddings) {
-    for (let i = 0; i < textChunks.length; i++) {
-      try {
-        console.log(`[LOG] Uploading embedding ${i} to Supabase...`);
-        
-        // Create embedding entry with only the columns that exist in your database
-        const embeddingEntry = {
-          content: textChunks[i],
-          embedding: embeddings[i]
-          // Remove the 'type' field since it doesn't exist in your database
-        };
-        
-        const { data, error } = await supabase
-          .from("huntlyembeddings")
-          .insert([embeddingEntry]);
-        
-        if (error) {
-          console.warn(`[WARN] Error uploading embedding ${i}:`, error);
-        } else {
-          console.log(`[LOG] Successfully uploaded embedding ${i} to Supabase.`);
-        }
-      } catch (error) {
-        console.error(`[ERROR] Error uploading embedding ${i}: ${error.message}`);
-      }
+// Function to store embedding in Supabase
+async function storeEmbedding(text, embedding, filename) {
+  try {
+    console.log("[LOG] Storing embedding in Supabase...");
+    
+    // Create embedding entry
+    const embeddingEntry = {
+      content: text,
+      embedding: embedding
+    };
+    
+    // Log embedding info for debugging
+    console.log(`[LOG] Embedding length: ${embedding.length}`);
+    console.log(`[LOG] Content length: ${text.length} characters`);
+    
+    // Insert into Supabase
+    const { data, error } = await supabase
+      .from("huntlyembeddings")
+      .insert([embeddingEntry]);
+    
+    if (error) {
+      console.error(`[ERROR] Error uploading embedding to Supabase:`, error);
+      throw error;
     }
+    
+    console.log(`[LOG] Successfully uploaded embedding to Supabase`);
+    return data;
+  } catch (error) {
+    console.error(`[ERROR] Error storing embedding: ${error.message}`);
+    throw error;
   }
+}
 
-// Function to extract structured data from resume using Groq API with fetch
+// Function to extract structured data from resume
 async function extractStructuredData(resumeText) {
   try {
     const apiKey = process.env.GROQ_API_MEESHA || process.env.GROQ_API_KEY;
@@ -189,8 +165,6 @@ async function extractStructuredData(resumeText) {
     }
     
     const responseData = await response.json();
-    
-    // Extract the JSON from the response
     const jsonText = responseData.choices[0].message.content.trim();
     
     // Parse the JSON
@@ -214,129 +188,76 @@ async function extractStructuredData(resumeText) {
   }
 }
 
-// Function to store candidate data in Supabase
-// Function to store candidate data in Supabase
 // Function to store candidate data in MongoDB
 async function storeCandidateData(candidateData) {
+  try {
+    console.log("[LOG] Storing candidate data in MongoDB...");
+    
+    // Get or create the CandidateData model
+    let CandidateModel;
     try {
-      console.log("[LOG] Storing candidate data in MongoDB...");
-      
-      // Use mongoose to create and save a new candidate document
-      const mongoose = require('mongoose');
-      
-      // Create a schema if it doesn't exist yet
-      let CandidateModel;
-      try {
-        // Try to get the existing model
-        CandidateModel = mongoose.model('CandidateData');
-      } catch (error) {
-        // Model doesn't exist, so create it
-        const candidateSchema = new mongoose.Schema({
-          name: {
-            type: String,
-            required: true
-          },
-          email: {
-            type: String
-          },
-          phone: {
-            type: String
-          },
-          resume_text: {
-            type: String
-          },
-          original_text: {
-            type: String
-          },
-          filename: {
-            type: String
-          },
-          upload_date: {
-            type: Date,
-            default: Date.now
-          }
-        }, { timestamps: true });
-        
-        // Create the model
-        CandidateModel = mongoose.model('CandidateData', candidateSchema);
-      }
-      
-      // Create a new candidate document
-      const candidate = new CandidateModel(candidateData);
-      
-      // Save the candidate to the database
-      const savedCandidate = await candidate.save();
-      console.log("[LOG] Candidate data saved to MongoDB successfully");
-      
-      // Return an array with the saved document (to match the previous return format)
-      return [{ id: savedCandidate._id.toString() }];
+      CandidateModel = mongoose.model('candidatedatas');
     } catch (error) {
-      console.error(`[ERROR] Error storing candidate data in MongoDB: ${error.message}`);
-      throw error;
+      const candidateSchema = new mongoose.Schema({
+        name: String,
+        email: String,
+        phone: String,
+        resume_text: String,
+        original_text: String,
+        filename: String,
+        upload_date: Date
+      }, { timestamps: true });
+      
+      CandidateModel = mongoose.model('candidatedatas', candidateSchema);
     }
+    
+    // Create and save the candidate document
+    const candidate = new CandidateModel(candidateData);
+    const savedCandidate = await candidate.save();
+    
+    console.log("[LOG] Candidate saved with ID:", savedCandidate._id);
+    return [{ id: savedCandidate._id.toString() }];
+  } catch (error) {
+    console.error(`[ERROR] Error storing candidate data: ${error.message}`);
+    throw error;
   }
+}
 
 // Main function to process a resume file
-// Main function to process a resume file
 async function processResume(filePath) {
-    try {
-      // Extract text from PDF
-      console.log("[LOG] Extracting text from PDF:", filePath);
-      const resumeText = await extractTextFromPDF(filePath);
-      console.log("[LOG] Successfully extracted text, length:", resumeText.length);
-      
-      // Split text into chunks
-      console.log("[LOG] Splitting text into chunks...");
-      const textChunks = splitText(resumeText);
-      console.log("[LOG] Text split into", textChunks.length, "chunks");
-      
-      // Generate embeddings for text chunks
-      console.log("[LOG] Generating embeddings...");
-      const embeddings = await generateEmbeddings(textChunks);
-      console.log("[LOG] Successfully generated embeddings");
-      
-      // Store embeddings in Supabase
-      console.log("[LOG] Storing embeddings in Supabase...");
-      await storeEmbeddings(textChunks, embeddings);
-      console.log("[LOG] Embeddings stored successfully");
-      
-      // Extract structured data from resume using LLM
-      console.log("[LOG] Extracting structured data...");
-      let candidateData;
-      try {
-        candidateData = await extractStructuredData(resumeText);
-      } catch (extractError) {
-        console.error("[ERROR] Failed to extract structured data:", extractError);
-        // Create a basic candidate data object as fallback
-        candidateData = {
-          name: "Unknown",
-          email: "unknown@example.com",
-          phone: "Unknown",
-          resume_text: resumeText.substring(0, 1000)
-        };
-      }
-      console.log("[LOG] Structured data extracted:", Object.keys(candidateData));
-      
-      // Add original text and filename
-      candidateData.original_text = resumeText;
-      candidateData.filename = path.basename(filePath);
-      candidateData.upload_date = new Date().toISOString();
-      
-      // Store candidate data in Supabase
-      console.log("[LOG] Storing candidate data...");
-      const storedData = await storeCandidateData(candidateData);
-      console.log("[LOG] Candidate data stored, ID:", storedData?.[0]?.id);
-      
-      return {
-        success: true,
-        candidateId: storedData?.[0]?.id || `generated-${Date.now()}`,
-        candidateData
-      };
-    } catch (error) {
-      console.error(`[ERROR] Error processing resume: ${error?.message || error}`);
-      throw error;
-    }
+  try {
+    // Extract text from PDF
+    console.log("[LOG] Processing resume:", filePath);
+    const resumeText = await extractTextFromPDF(filePath);
+    console.log("[LOG] Extracted text, length:", resumeText.length);
+    
+    // Generate embedding for the entire text
+    const embedding = await generateEmbedding(resumeText);
+    
+    // Store the embedding in Supabase
+    await storeEmbedding(resumeText, embedding, path.basename(filePath));
+    
+    // Extract structured data using LLM
+    const candidateData = await extractStructuredData(resumeText);
+    
+    // Add additional information
+    candidateData.original_text = resumeText;
+    candidateData.filename = path.basename(filePath);
+    candidateData.upload_date = new Date();
+    
+    // Store candidate data in MongoDB
+    const storedData = await storeCandidateData(candidateData);
+    
+    return {
+      success: true,
+      candidateId: storedData[0].id,
+      candidateData
+    };
+  } catch (error) {
+    console.error(`[ERROR] Error processing resume: ${error.message}`);
+    throw error;
   }
+}
 
 // Process multiple resumes
 async function processMultipleResumes(filePaths) {
